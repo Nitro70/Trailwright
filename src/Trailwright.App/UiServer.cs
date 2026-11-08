@@ -48,6 +48,8 @@ public static class UiServer
                 var origin = ctx.Request.Headers.Origin.ToString();
                 if (origin.Length > 0 && origin != $"http://127.0.0.1:{port}") { ctx.Response.StatusCode = 403; return; }
             }
+            // never let the window keep an old copy of the page or the scripts after an update
+            ctx.Response.Headers.CacheControl = "no-store";
             try { await next(); }
             catch (EditException ex) { await Fail(ctx, ex.Message); }
             catch (Exception ex) when (ex is InvalidDataException or UnauthorizedAccessException or IOException or InvalidOperationException
@@ -58,6 +60,8 @@ public static class UiServer
         app.MapGet("/api/state", () => Results.Json(s.StateView(), AppState.Json));
         app.MapGet("/api/catalog", () => Results.Json(new
         {
+            version = typeof(UiServer).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+                .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion,
             palette = s.Catalog.Palette,
             categories = s.Catalog.CategoryNames,
             actions = s.Catalog.Actions,

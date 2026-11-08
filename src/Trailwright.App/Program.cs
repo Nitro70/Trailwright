@@ -109,7 +109,7 @@ sealed class MainForm : Form
                             {
                                 await Task.Delay(250);
                                 var js = await web.CoreWebView2.ExecuteScriptAsync(
-                                    "JSON.stringify({parts: document.querySelectorAll('.part').length, swatches: document.querySelectorAll('#swatches i').length, gl: !!document.getElementById('view').getContext('webgl2'), title: document.title})");
+                                    "JSON.stringify({parts: document.querySelectorAll('.part').length, swatches: document.querySelectorAll('#swatches i').length, gl: !!document.getElementById('view').getContext('webgl2'), title: document.title, build: document.getElementById('build').textContent})");
                                 if (js.Contains("\\\"parts\\\":0")) continue;
                                 result = (js.Contains("\\\"gl\\\":true") ? "PASS " : "FAIL ") + js;
                                 break;

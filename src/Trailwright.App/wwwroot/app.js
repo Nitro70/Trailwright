@@ -809,7 +809,9 @@ setInterval(async () => {
 (async () => {
   S.catalog = await api('catalog');
   const modelCount = await loadModelIndex();
-  if (!modelCount) $('status').textContent = 'Blocks show as boxes: run tools/re/export_models.py once to load the models from your game';
+  // which build is running and whether the game's models were found, always visible in the status bar
+  const ver = (S.catalog.version || '').replace(/\+(.{7}).*/, ' ($1)');
+  $('build').textContent = `Trailwright ${ver} · ` + (modelCount ? `real models: ${modelCount} block types` : 'no block models found (run tools/re/export_models.py)');
   S.catalog.blocks.forEach((b) => S.byGuid.set(b.guid, b));
   renderCats(); renderSwatches(); renderParts(); setTool('select');
   resize();
