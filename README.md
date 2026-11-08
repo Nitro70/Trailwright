@@ -8,9 +8,17 @@ Trailwright is a separate Windows app, not a game mod. It reads and writes the s
 
 > **Status (v0.1.0, pre-release):** the file format is fully worked out and verified: 228 real blueprints, autosaves and transformation slots round-trip byte for byte, and files written by Trailwright decode with independent tools. Blocks placed by Trailwright get exactly the connections the game itself would make (375 of 375 re-placed blocks matched). **What has not happened yet is loading a Trailwright-edited blueprint in the game itself.** Keep the automatic backups until you have tried it.
 
+**Real block models.** Trailwright draws blocks with the game's own models and paint, and saves a blueprint picture rendered from them (so the game's blueprint menu shows your build, not boxes). The models are read from **your own Trailmakers install** once and kept on your PC (`%LOCALAPPDATA%\Trailwright\models`); none are included in this repository or the download. Run this once, and again after a game update (needs Python 3 with `UnityPy` and `numpy`):
+
+```bash
+python tools/re/export_models.py
+```
+
+Set `TRAILMAKERS_DIR` first if the game is not in the default Steam folder. Without the models, blocks show as boxes and saved pictures use a simple drawing. 500 of the 502 block types have models; the paint rule (white surfaces take the main or second colour, everything else keeps its own colour) was checked against the game's own pictures.
+
 **Known limitations**
 
-- Blocks are drawn as boxes the size of their grid cells, not with the game's models.
+- Two block types (Big Drag Racing Wheel, Snowball Dispenser) still show as boxes. Block icons in the parts palette are simple shapes.
 - Logic links (seat or sensor to block) store two offsets. Trailwright keeps the first (the linked block) correct when blocks are removed. The second (`m_socketOffset`) is not a block index and its meaning is not known yet, so it is kept as it was. Adding blocks is unaffected; removing blocks from a build with logic links is the case to check in game.
 - New blocks get the game's own default settings for their type. Key bindings start empty: set them in the properties panel or with `set_block_keys`.
 

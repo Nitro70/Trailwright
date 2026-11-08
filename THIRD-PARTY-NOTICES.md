@@ -2,7 +2,7 @@
 
 ## three.js (r170)
 
-`src/Trailwright.App/wwwroot/vendor/three.module.min.js` and `OrbitControls.js` are from
+`src/Trailwright.App/wwwroot/vendor/three.module.min.js`, `OrbitControls.js` and `RoomEnvironment.js` are from
 [three.js](https://github.com/mrdoob/three.js), MIT License, Copyright (c) 2010-2024 three.js authors.
 The full licence text is in `src/Trailwright.App/wwwroot/vendor/three-LICENSE.txt`.
 
@@ -19,4 +19,5 @@ exactly.
 attachment points, setting ranges and default settings) so blueprints can be read and written. It is
 generated from a local game install by `tools/re/make_catalog.py`. Trailmakers is made by Flashbulb
 Games; Trailwright is an unofficial fan tool and is not affiliated with or endorsed by them. No game
-code, models, textures or sounds are included.
+code, models, textures or sounds are included. Block models are only ever extracted locally from
+the user's own game install by `tools/re/export_models.py` and stay on that PC.

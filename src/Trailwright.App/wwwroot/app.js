@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
+import { RoomEnvironment } from './vendor/RoomEnvironment.js';
 
 // ---------- small helpers ----------
 const $ = (id) => document.getElementById(id);
@@ -91,8 +92,12 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.12;
 controls.screenSpacePanning = true;
 
-scene3.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a2622, 1.25));
-const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+// image-based lighting so glossy paint (black especially) catches reflections like in the game
+scene3.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene3.environmentIntensity = 0.85;
+renderer.toneMapping = THREE.NeutralToneMapping;
+scene3.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a2622, 0.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
 sun.position.set(30, 60, -20);
 scene3.add(sun);
 const fill = new THREE.DirectionalLight(0x9db8ff, 0.45);
@@ -116,69 +121,182 @@ function makeGrid(size, y) {
 }
 makeGrid(64, -0.5);
 
+// Unity is left-handed: everything in build coordinates lives under this Z-mirrored group so the
+// view (and the saved picture) is the right way round, like in the game.
+const world = new THREE.Group();
+world.scale.set(1, 1, -1);
+scene3.add(world);
+
 const boxGeo = new THREE.BoxGeometry(1, 1, 1);
 const blockMat = new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.08 });
-let blocksMesh = null;
+const pickMat = new THREE.MeshBasicMaterial({ visible: false });
+let blocksMesh = null;   // boxes, only for block types without a model
+let pickMesh = null;     // invisible boxes for every block: what clicks hit
 let outlines = null;
+let modelMeshes = [];
 let instanceToBlock = [];
 const selBox = new THREE.Box3Helper(new THREE.Box3(), 0xff8c1a);
 selBox.visible = false;
-scene3.add(selBox);
+world.add(selBox);
 const hoverBox = new THREE.Box3Helper(new THREE.Box3(), 0x409cff);
 hoverBox.visible = false;
-scene3.add(hoverBox);
+world.add(hoverBox);
 const ghost = new THREE.Mesh(boxGeo, new THREE.MeshStandardMaterial({ color: 0x3fcf7a, transparent: true, opacity: 0.45, depthWrite: false }));
 ghost.visible = false;
-scene3.add(ghost);
+world.add(ghost);
 const ghostEdges = new THREE.Box3Helper(new THREE.Box3(), 0x3fcf7a);
 ghostEdges.visible = false;
-scene3.add(ghostEdges);
+world.add(ghostEdges);
 
-function paletteColor(i) {
+function paletteColor(i, fallback = '#9e9e9e') {
   const p = S.catalog?.palette;
-  return new THREE.Color(p && i !== null && i !== undefined && p[i] ? p[i] : '#9e9e9e');
+  return new THREE.Color(p && i !== null && i !== undefined && p[i] ? p[i] : fallback);
+}
+const lift = (c) => c.setRGB(0.04 + c.r * 0.96, 0.04 + c.g * 0.96, 0.045 + c.b * 0.955);
+
+// ---------- real block models (extracted from the player's own game install, never shipped) ----------
+const Models = { index: null, geo: new Map(), loading: new Map() };
+async function loadModelIndex() {
+  try { Models.index = (await api('models')).blocks || {}; } catch { Models.index = {}; }
+  return Object.keys(Models.index).length;
+}
+const modelParts = (guid) => Models.index?.[guid]?.parts?.map((p) => p.part) ?? [];
+const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+
+function loadPart(guid, part) {
+  const key = guid + '_' + part;
+  if (!Models.loading.has(key)) Models.loading.set(key, (async () => {
+    let g = null;
+    try {
+      const r = await fetch('/api/models/' + key + '.bin');
+      if (r.ok) {
+        const buf = await r.arrayBuffer();
+        const dv = new DataView(buf);
+        if (dv.getUint32(0, true) === 0x314D5754) { // "TWM1"
+          const nv = dv.getUint32(4, true), ni = dv.getUint32(8, true);
+          let o = 12;
+          const pos = new Float32Array(buf, o, nv * 3); o += nv * 12;
+          const nrm = new Float32Array(buf, o, nv * 3); o += nv * 12;
+          const rgba = new Uint8Array(buf, o, nv * 4); o += nv * 4;
+          const idx = new Uint32Array(buf, o, ni);
+          const p4 = new Float32Array(nv * 3);
+          for (let i = 0; i < nv * 3; i++) p4[i] = pos[i] * 4; // metres -> grid cells (0.25 m)
+          const col = new Float32Array(nv * 3), paint = new Float32Array(nv);
+          for (let i = 0; i < nv; i++) {
+            col[i * 3] = toLinear(rgba[i * 4] / 255);
+            col[i * 3 + 1] = toLinear(rgba[i * 4 + 1] / 255);
+            col[i * 3 + 2] = toLinear(rgba[i * 4 + 2] / 255);
+            paint[i] = rgba[i * 4 + 3];
+          }
+          g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.BufferAttribute(p4, 3));
+          g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nrm), 3));
+          g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+          g.setAttribute('paint', new THREE.BufferAttribute(paint, 1));
+          g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
+          // safety net: rebuild normals if the cache has none (all zero)
+          let any = false;
+          for (let i = 0; i < nrm.length && !any; i++) any = nrm[i] !== 0;
+          if (!any) g.computeVertexNormals();
+          g.computeBoundingSphere();
+        }
+      }
+    } catch { g = null; }
+    Models.geo.set(key, g);
+    return g;
+  })());
+  return Models.loading.get(key);
 }
 
+// The game's block shader paints white vertices with the block's primary (paint 1) or secondary
+// (paint 2) colour; everything else keeps its own colour.
+const modelMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.1 });
+modelMat.onBeforeCompile = (sh) => {
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', '#include <common>\nattribute float paint;\nattribute vec3 instPrimary;\nattribute vec3 instSecondary;')
+    .replace('#include <color_vertex>', '#include <color_vertex>\n  vColor.rgb = paint > 1.5 ? instSecondary : (paint > 0.5 ? instPrimary : color.rgb);');
+};
+
+const nodeMatrix = (p, m) => new THREE.Matrix4().set(m[0], m[1], m[2], p[0], m[3], m[4], m[5], p[1], m[6], m[7], m[8], p[2], 0, 0, 0, 1);
+
+let modelsPending = Promise.resolve();
+// read-only handle for checking the view from a browser console
+window.__tw = { S, world, renderer, get models() { return modelMeshes; }, get boxes() { return blocksMesh; } };
 function rebuildBlocks() {
-  if (blocksMesh) { scene3.remove(blocksMesh); blocksMesh.dispose(); }
+  for (const m of modelMeshes) { world.remove(m); m.dispose(); }
+  modelMeshes = [];
+  if (blocksMesh) { world.remove(blocksMesh); blocksMesh.dispose(); blocksMesh = null; }
+  if (pickMesh) { world.remove(pickMesh); pickMesh.dispose(); pickMesh = null; }
+  if (outlines) { world.remove(outlines); outlines.geometry.dispose(); outlines = null; }
   const list = S.scene.blocks;
   S.occupied = new Map();
   instanceToBlock = [];
-  blocksMesh = new THREE.InstancedMesh(boxGeo, blockMat, Math.max(1, list.length));
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion();
-  list.forEach((b, i) => {
-    const mn = b.cellsMin, mx = b.cellsMax;
-    const c = new THREE.Vector3((mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2);
-    const s = new THREE.Vector3(mx[0] - mn[0] + 1 - 0.06, mx[1] - mn[1] + 1 - 0.06, mx[2] - mn[2] + 1 - 0.06);
-    m.compose(c, q, s);
-    blocksMesh.setMatrixAt(i, m);
-    const col = paletteColor(b.color);
-    col.setRGB(0.05 + col.r * 0.95, 0.05 + col.g * 0.95, 0.055 + col.b * 0.945);
-    blocksMesh.setColorAt(i, col);
+  const boxed = [], groups = new Map(), toLoad = new Map();
+  for (const b of list) {
     instanceToBlock.push(b);
+    const mn = b.cellsMin, mx = b.cellsMax;
     for (let x = mn[0]; x <= mx[0]; x++) for (let y = mn[1]; y <= mx[1]; y++) for (let z = mn[2]; z <= mx[2]; z++)
-      S.occupied.set(`${x},${y},${z}`, b.id);
-  });
-  blocksMesh.count = list.length;
-  blocksMesh.instanceMatrix.needsUpdate = true;
-  if (blocksMesh.instanceColor) blocksMesh.instanceColor.needsUpdate = true;
-  scene3.add(blocksMesh);
-  // outlines (one merged line set) so dark blocks still read against the dark background
-  if (outlines) { scene3.remove(outlines); outlines.geometry.dispose(); outlines = null; }
-  if (list.length && list.length <= 12000) {
-    const pts = new Float32Array(list.length * 24 * 3);
+      S.occupied.set(x + ',' + y + ',' + z, b.id);
+    const parts = modelParts(b.guid);
+    const nodes = (b.nodes ?? [{ socket: 0, pos: b.pos, matrix: b.matrix }]).filter((n) => parts.includes(n.socket));
+    const ready = nodes.length > 0 && nodes.every((n) => Models.geo.get(b.guid + '_' + n.socket));
+    if (!ready) {
+      for (const n of nodes) if (!Models.geo.has(b.guid + '_' + n.socket)) toLoad.set(b.guid + '_' + n.socket, [b.guid, n.socket]);
+      boxed.push(b);
+      continue;
+    }
+    const c1 = lift(paletteColor(b.color, '#d9d9d9')), c2 = lift(paletteColor(b.color2, '#6f6f6f'));
+    for (const n of nodes) {
+      const key = b.guid + '_' + n.socket;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push({ m: nodeMatrix(n.pos, n.matrix), c1, c2 });
+    }
+  }
+  if (toLoad.size) modelsPending = Promise.all([...toLoad.values()].map(([g, p]) => loadPart(g, p))).then(() => rebuildBlocks());
+
+  for (const [key, inst] of groups) {
+    const g = Models.geo.get(key);
+    const im = new THREE.InstancedMesh(g, modelMat, inst.length);
+    const p = new Float32Array(inst.length * 3), q = new Float32Array(inst.length * 3);
+    inst.forEach((x, i) => { im.setMatrixAt(i, x.m); p.set([x.c1.r, x.c1.g, x.c1.b], i * 3); q.set([x.c2.r, x.c2.g, x.c2.b], i * 3); });
+    g.setAttribute('instPrimary', new THREE.InstancedBufferAttribute(p, 3));
+    g.setAttribute('instSecondary', new THREE.InstancedBufferAttribute(q, 3));
+    im.instanceMatrix.needsUpdate = true;
+    im.frustumCulled = false;
+    world.add(im);
+    modelMeshes.push(im);
+  }
+
+  const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion();
+  const boxMatrix = (b, shrink) => {
+    const mn = b.cellsMin, mx = b.cellsMax;
+    return m4.compose(new THREE.Vector3((mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2), q4,
+      new THREE.Vector3(mx[0] - mn[0] + 1 - shrink, mx[1] - mn[1] + 1 - shrink, mx[2] - mn[2] + 1 - shrink));
+  };
+  pickMesh = new THREE.InstancedMesh(boxGeo, pickMat, Math.max(1, list.length));
+  list.forEach((b, i) => pickMesh.setMatrixAt(i, boxMatrix(b, 0)));
+  pickMesh.count = list.length;
+  pickMesh.instanceMatrix.needsUpdate = true;
+  world.add(pickMesh);
+
+  if (boxed.length) {
+    blocksMesh = new THREE.InstancedMesh(boxGeo, blockMat, boxed.length);
+    boxed.forEach((b, i) => { blocksMesh.setMatrixAt(i, boxMatrix(b, 0.06)); blocksMesh.setColorAt(i, lift(paletteColor(b.color))); });
+    blocksMesh.instanceMatrix.needsUpdate = true;
+    if (blocksMesh.instanceColor) blocksMesh.instanceColor.needsUpdate = true;
+    world.add(blocksMesh);
+    // outlines so dark boxes still read against the dark background
+    const pts = new Float32Array(boxed.length * 24 * 3);
     let o = 0;
-    for (const b of list) {
+    for (const b of boxed) {
       const a = [b.cellsMin[0] - 0.47, b.cellsMin[1] - 0.47, b.cellsMin[2] - 0.47], z = [b.cellsMax[0] + 0.47, b.cellsMax[1] + 0.47, b.cellsMax[2] + 0.47];
       const c = [[a[0], a[1], a[2]], [z[0], a[1], a[2]], [z[0], z[1], a[2]], [a[0], z[1], a[2]], [a[0], a[1], z[2]], [z[0], a[1], z[2]], [z[0], z[1], z[2]], [a[0], z[1], z[2]]];
-      for (const [i, j] of [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]]) {
-        pts.set(c[i], o); pts.set(c[j], o + 3); o += 6;
-      }
+      for (const [i, j] of [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]]) { pts.set(c[i], o); pts.set(c[j], o + 3); o += 6; }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pts, 3));
     outlines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x6b7384, transparent: true, opacity: 0.55 }));
-    scene3.add(outlines);
+    world.add(outlines);
   }
   const lowest = list.length ? Math.min(...list.map((b) => b.cellsMin[1])) : 0;
   const span = list.length ? Math.max(...list.map((b) => Math.max(Math.abs(b.cellsMin[0]), Math.abs(b.cellsMax[0]), Math.abs(b.cellsMin[2]), Math.abs(b.cellsMax[2])))) : 8;
@@ -192,15 +310,20 @@ function boxOf(b) {
     new THREE.Vector3(b.cellsMax[0] + 0.5, b.cellsMax[1] + 0.5, b.cellsMax[2] + 0.5));
 }
 
-function frameAll() {
-  const list = S.scene.blocks;
-  if (!list.length) { controls.target.set(0, 0, 0); camera.position.set(14, 12, -18); return; }
+function buildBoxWorld() {
   const box = new THREE.Box3();
-  list.forEach((b) => box.union(boxOf(b)));
+  S.scene.blocks.forEach((b) => box.union(boxOf(b)));
+  world.updateMatrixWorld();
+  return box.applyMatrix4(world.matrixWorld);
+}
+
+function frameAll() {
+  if (!S.scene.blocks.length) { controls.target.set(0, 0, 0); camera.position.set(14, 12, 18); return; }
+  const box = buildBoxWorld();
   const c = box.getCenter(new THREE.Vector3());
   const r = box.getSize(new THREE.Vector3()).length() * 0.5 + 2;
   controls.target.copy(c);
-  camera.position.copy(c).add(new THREE.Vector3(1, 0.8, -1.2).normalize().multiplyScalar(r * 2.4));
+  camera.position.copy(c).add(new THREE.Vector3(1, 0.8, 1.2).normalize().multiplyScalar(r * 2.4));
 }
 
 function resize() {
@@ -217,6 +340,60 @@ new ResizeObserver(resize).observe($('viewport'));
   requestAnimationFrame(loop);
 })();
 
+// ---------- the blueprint picture: rendered from the real models, like the game's own ----------
+async function renderPicture() {
+  if (!S.scene.blocks.length) return null;
+  await modelsPending;
+  const big = 1024, size = 512;
+  const rt = new THREE.WebGLRenderTarget(big, big);
+  rt.texture.colorSpace = THREE.SRGBColorSpace;
+  const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 10000);
+  const box = buildBoxWorld();
+  const c = box.getCenter(new THREE.Vector3());
+  const r = box.getBoundingSphere(new THREE.Sphere()).radius;
+  cam.position.copy(c).addScaledVector(new THREE.Vector3(1, 0.75, 1.15).normalize(), (r / Math.sin(THREE.MathUtils.degToRad(15))) * 1.02);
+  cam.lookAt(c);
+  const hide = [grid, selBox, hoverBox, ghost, ghostEdges, outlines].filter(Boolean).map((o) => [o, o.visible]);
+  hide.forEach(([o]) => (o.visible = false));
+  const clear = renderer.getClearAlpha();
+  renderer.setClearColor(0x000000, 0);
+  renderer.setRenderTarget(rt);
+  renderer.clear();
+  renderer.render(scene3, cam);
+  const px = new Uint8Array(big * big * 4);
+  renderer.readRenderTargetPixels(rt, 0, 0, big, big, px);
+  renderer.setRenderTarget(null);
+  renderer.setClearColor(0x000000, clear);
+  hide.forEach(([o, v]) => (o.visible = v));
+  rt.dispose();
+  const full = document.createElement('canvas');
+  full.width = full.height = big;
+  const img = full.getContext('2d').createImageData(big, big);
+  for (let y = 0; y < big; y++) img.data.set(px.subarray((big - 1 - y) * big * 4, (big - y) * big * 4), y * big * 4);
+  full.getContext('2d').putImageData(img, 0, 0);
+  const out = document.createElement('canvas');
+  out.width = out.height = size;
+  const ctx = out.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(full, 0, 0, size, size);
+  return out.toDataURL('image/png');
+}
+
+// keep the server's picture current so AI saves get a real render too
+let pictureTimer = null, pictureRevision = -1;
+function schedulePicture() {
+  clearTimeout(pictureTimer);
+  pictureTimer = setTimeout(uploadPicture, 1200);
+}
+async function uploadPicture() {
+  const rev = S.revision;
+  if (rev === pictureRevision || !S.scene.blocks.length) return;
+  try {
+    const dataUrl = await renderPicture();
+    if (dataUrl && rev === S.revision) { await api('picture', { dataUrl, revision: rev }); pictureRevision = rev; }
+  } catch { /* the built-in drawing is used instead */ }
+}
+
 // ---------- picking & placement ----------
 const ray = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
@@ -226,20 +403,23 @@ function pick(ev) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, camera);
-  if (blocksMesh && S.scene.blocks.length) {
-    const hits = ray.intersectObject(blocksMesh);
+  if (pickMesh && S.scene.blocks.length) {
+    const hits = ray.intersectObject(pickMesh);
     if (hits.length) {
       const h = hits[0];
       const b = instanceToBlock[h.instanceId];
-      const n = h.face.normal.clone().round();
+      const n = h.face.normal.clone().round(); // box space = build axes
       // the cell that was hit: step half a cell back into the block from the hit point
-      const p = h.point.clone().addScaledVector(n, -0.25);
+      const p = world.worldToLocal(h.point.clone()).addScaledVector(n, -0.25);
       return { block: b, cell: [Math.round(p.x), Math.round(p.y), Math.round(p.z)], normal: [n.x, n.y, n.z] };
     }
   }
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(grid?.userData.y ?? -0.5));
   const pt = new THREE.Vector3();
-  if (ray.ray.intersectPlane(plane, pt)) return { block: null, cell: [Math.round(pt.x), Math.round(pt.y - 0.5) + 1 - 1, Math.round(pt.z)], normal: [0, 1, 0], ground: true };
+  if (ray.ray.intersectPlane(plane, pt)) {
+    const lp = world.worldToLocal(pt.clone());
+    return { block: null, cell: [Math.round(lp.x), Math.round(lp.y), Math.round(lp.z)], normal: [0, 1, 0], ground: true };
+  }
   return null;
 }
 
@@ -497,6 +677,8 @@ $('buildDesc').addEventListener('change', (e) => act(() => api('info', { descrip
 
 async function save(asNew) {
   try {
+    const dataUrl = await renderPicture().catch(() => null);
+    if (dataUrl) { await api('picture', { dataUrl, revision: S.revision }); pictureRevision = S.revision; }
     const r = await api('save', { asNew: asNew || !S.state?.source });
     toast('Saved ' + r.path.split(/[\\/]/).pop() + '. Reopen the blueprint menu in the game to see it.', true);
     await refreshState();
@@ -609,6 +791,7 @@ async function refreshScene(reframe = false) {
   S.scene = await api('scene');
   S.revision = S.scene.revision;
   rebuildBlocks();
+  schedulePicture();
   if (reframe) frameAll();
   await refreshState();
   if (S.selected != null) renderProps();
@@ -625,6 +808,8 @@ setInterval(async () => {
 // ---------- start ----------
 (async () => {
   S.catalog = await api('catalog');
+  const modelCount = await loadModelIndex();
+  if (!modelCount) $('status').textContent = 'Blocks show as boxes: run tools/re/export_models.py once to load the models from your game';
   S.catalog.blocks.forEach((b) => S.byGuid.set(b.guid, b));
   renderCats(); renderSwatches(); renderParts(); setTool('select');
   resize();

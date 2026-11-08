@@ -295,7 +295,15 @@ public sealed class BuilderTools(AppState s)
     });
 
     [McpServerTool(Name = "save_build"), Description("Save the build as a Trailmakers blueprint. as_new=true writes a new file in the Blueprints folder; false overwrites the file it was opened from (the old file is backed up first). The game shows new files the next time its blueprint menu is opened.")]
-    public string Save(bool as_new = true) => Run("save_build", () =>
+    public string Save(bool as_new = true)
+    {
+        // When the app window is open it re-renders the build with the real game models after each
+        // change; give it a moment to catch up so the blueprint picture shows this exact build.
+        for (int i = 0; i < 30 && s.LivePicture is { } lp && lp.Revision != Ed.Revision; i++) Thread.Sleep(100);
+        return SaveNow(as_new);
+    }
+
+    string SaveNow(bool as_new) => Run("save_build", () =>
     {
         if (!s.Settings.AiCanSave) throw new EditException("the user has not allowed the AI port to save; ask them to save from the app");
         var path = s.Save(as_new);

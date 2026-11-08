@@ -22,6 +22,9 @@ public static class UiServer
     public sealed record NewReq(string? Name, bool Discard);
     public sealed record SaveReq(bool AsNew);
     public sealed record SettingsReq(bool? Unrestricted, bool? AiEnabled, int? AiPort, bool? AiCanSave);
+    public sealed record PictureReq(string DataUrl, int Revision);
+
+    static readonly System.Text.RegularExpressions.Regex ModelFile = new(@"^[0-9a-f\-]{36}_\d{1,2}\.bin$");
 
     public static async Task<WebApplication> Start(AppState s, int port)
     {
@@ -69,6 +72,28 @@ public static class UiServer
         app.MapGet("/api/scene", () => Results.Json(s.SceneView(), AppState.Json));
         app.MapGet("/api/block/{id:int}", (int id) => { lock (s.Editor.Gate) return Results.Json(s.BlockView(s.Editor.Get(id), true), AppState.Json); });
         app.MapGet("/api/library", () => Results.Json(s.Library.List(), AppState.Json));
+
+        // block models from the local cache (extracted from the user's own game install)
+        app.MapGet("/api/models", () =>
+        {
+            var idx = Path.Combine(s.ModelsDir, "index.json");
+            return File.Exists(idx) ? Results.File(File.ReadAllBytes(idx), "application/json") : Results.Json(new { blocks = new { } });
+        });
+        app.MapGet("/api/models/{file}", (string file) =>
+        {
+            if (!ModelFile.IsMatch(file)) return Results.NotFound();
+            var p = Path.Combine(s.ModelsDir, file);
+            return File.Exists(p) ? Results.File(File.ReadAllBytes(p), "application/octet-stream") : Results.NotFound();
+        });
+        app.MapPost("/api/picture", (PictureReq r) =>
+        {
+            const string prefix = "data:image/png;base64,";
+            if (!r.DataUrl.StartsWith(prefix)) throw new EditException("expected a PNG data URL");
+            var img = Trailwright.Format.Png.Decode(Convert.FromBase64String(r.DataUrl[prefix.Length..]));
+            if (img.Width != 512 || img.Height != 512) throw new EditException("picture must be 512x512");
+            s.LivePicture = (img, r.Revision);
+            return Results.Ok();
+        });
         app.MapGet("/api/library/picture", (string path) => Results.File(File.ReadAllBytes(s.Library.Check(path)), "image/png"));
 
         app.MapPost("/api/open", (OpenReq r) =>

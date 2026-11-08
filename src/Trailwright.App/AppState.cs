@@ -41,6 +41,12 @@ public sealed class AppState
     public McpHost Mcp { get; }
     public string? LastAiActivity { get; set; }
 
+    /// <summary>Block models extracted from the user's own game install (tools/re/export_models.py). Never shipped.</summary>
+    public string ModelsDir { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Trailwright", "models");
+
+    /// <summary>The newest picture the 3D view rendered with the real models, and the build revision it shows.</summary>
+    public (Trailwright.Format.RgbaImage Image, int Revision)? LivePicture { get; set; }
+
     public AppState(Settings settings)
     {
         Settings = settings;
@@ -90,6 +96,10 @@ public sealed class AppState
             settings = sliders.Count > 0 ? sliders : null,
             keys = kp != 0 || kn != 0 ? new { positive = Catalog.ActionName(kp), negative = Catalog.ActionName(kn) } : null,
             parts = b.Nodes.Count > 1 ? b.Nodes.Count : (int?)null,
+            // every part's own placement (hinge tops, piston heads...), for drawing the real models
+            nodes = b.Nodes.Count > 1
+                ? b.Nodes.Select(n => new { socket = n.Socket, pos = n.Pos.ToArray(), matrix = n.Rot.Matrix }).ToList()
+                : null,
         };
         if (!detail) return view;
         var connected = Editor.Build.Edges
@@ -232,7 +242,15 @@ public sealed class AppState
             var b = Editor.Build;
             string? path = asNew ? null : Editor.SourcePath;
             if (path != null && !Path.GetFullPath(path).StartsWith(Library.Root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) path = null;
-            var saved = Library.Save(b, path, rerenderPicture: b.StructureChanged || path == null);
+            // Prefer the 3D view's render with the real game models when it shows this exact revision;
+            // otherwise fall back to the built-in drawing.
+            bool rerender = b.StructureChanged || path == null;
+            if (rerender && LivePicture is { } live && live.Revision == Editor.Revision)
+            {
+                b.Picture = live.Image;
+                rerender = false;
+            }
+            var saved = Library.Save(b, path, rerenderPicture: rerender);
             Editor.SourcePath = saved;
             Editor.MarkSaved();
             return saved;
