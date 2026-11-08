@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trailwright</title>
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="app.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><img src="icon.png" alt=""><span>Trailwright</span></div>
+  <div class="group">
+    <button data-act="new" title="New build (Ctrl+N)">New</button>
+    <button data-act="open" title="Open a blueprint (Ctrl+O)">Open</button>
+    <button data-act="save" class="primary" title="Save (Ctrl+S)">Save</button>
+    <button data-act="saveNew" title="Save as a new blueprint">Save as new</button>
+  </div>
+  <div class="group">
+    <button data-act="undo" title="Undo (Ctrl+Z)">&#8630;</button>
+    <button data-act="redo" title="Redo (Ctrl+Y)">&#8631;</button>
+  </div>
+  <div class="group tools" id="tools">
+    <button data-tool="select" class="on" title="Select (V)">Select</button>
+    <button data-tool="build" title="Build: place the chosen part (B)">Build</button>
+    <button data-tool="paint" title="Paint with the chosen colour (P)">Paint</button>
+    <button data-tool="erase" title="Remove blocks (E)">Erase</button>
+  </div>
+  <div class="group">
+    <button data-rot="y" title="Turn the part (R)">&#10227; Y</button>
+    <button data-rot="x" title="Tilt the part (T)">&#10227; X</button>
+    <button data-rot="z" title="Roll the part (F)">&#10227; Z</button>
+  </div>
+  <div class="spacer"></div>
+  <label class="toggle danger" title="Lets block settings go past the game's limits">
+    <input type="checkbox" id="unrestricted"><span>Unrestricted</span>
+  </label>
+  <div class="ai" id="aiBox">
+    <label class="toggle"><input type="checkbox" id="aiEnabled"><span>AI port</span></label>
+    <input type="number" id="aiPort" min="1024" max="65535" title="Port">
+    <span class="pill" id="aiPill">off</span>
+    <label class="toggle" title="Allow the AI to save the build as a blueprint file"><input type="checkbox" id="aiCanSave"><span>AI can save</span></label>
+  </div>
+</header>
+
+<main>
+  <aside class="left">
+    <section class="panel parts">
+      <div class="panel-title">Parts</div>
+      <input type="search" id="partSearch" placeholder="Search parts">
+      <div class="cats" id="cats"></div>
+      <div class="partgrid" id="partGrid"></div>
+    </section>
+    <section class="panel colors">
+      <div class="panel-title">Colours <span class="hint">click = main, right-click = second</span></div>
+      <div class="swatches" id="swatches"></div>
+      <div class="chosen"><span>Main</span><i id="chosen1"></i><span>Second</span><i id="chosen2"></i></div>
+    </section>
+  </aside>
+
+  <section class="viewport" id="viewport">
+    <canvas id="view"></canvas>
+    <div class="overlay tl" id="buildTitle"></div>
+    <div class="overlay bl" id="hud">Left click: act &middot; right drag: orbit &middot; middle drag / shift+right: pan &middot; wheel: zoom</div>
+    <div class="toast" id="toast"></div>
+  </section>
+
+  <aside class="right">
+    <section class="panel">
+      <div class="panel-title">Build</div>
+      <label class="field">Name<input id="buildName" maxlength="80"></label>
+      <label class="field">Description<textarea id="buildDesc" rows="2" maxlength="400"></textarea></label>
+      <div class="stats" id="buildStats"></div>
+    </section>
+    <section class="panel grow">
+      <div class="panel-title">Properties</div>
+      <div id="props" class="props empty">Select a block to see its settings.</div>
+    </section>
+    <section class="panel">
+      <div class="panel-title">AI port</div>
+      <div id="aiInfo" class="small"></div>
+    </section>
+  </aside>
+</main>
+
+<footer class="statusbar">
+  <span id="status">Ready</span>
+  <span class="spacer"></span>
+  <span id="cursor"></span>
+  <span id="source"></span>
+</footer>
+
+<dialog id="library">
+  <div class="dlg-head">
+    <div class="panel-title">Open blueprint</div>
+    <input type="search" id="libSearch" placeholder="Search by name">
+    <select id="libFolder"></select>
+    <button data-close>Close</button>
+  </div>
+  <div class="libgrid" id="libGrid"></div>
+</dialog>
+
+<dialog id="confirm">
+  <p id="confirmText"></p>
+  <div class="dlg-buttons"><button id="confirmNo">Cancel</button><button id="confirmYes" class="primary">Continue</button></div>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

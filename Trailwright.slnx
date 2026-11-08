@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Trailwright.App/Trailwright.App.csproj" />
+    <Project Path="src/Trailwright.Core/Trailwright.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Trailwright.Tests/Trailwright.Tests.csproj" />
+  </Folder>
+</Solution>

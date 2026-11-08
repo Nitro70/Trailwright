@@ -1,0 +1,13 @@
+bin/
+obj/
+publish/
+dist/
+*.user
+.vs/
+.vscode/
+.claude/
+CLAUDE.md
+__pycache__/
+# reverse-engineering output from the game's own files (never published)
+tools/decompile/out/
+*.trailwright-tmp
