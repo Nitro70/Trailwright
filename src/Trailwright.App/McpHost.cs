@@ -63,7 +63,7 @@ public sealed class McpHost(AppState state)
             builder.Services.AddSingleton(state);
             builder.Services.AddMcpServer(o =>
                 {
-                    o.ServerInfo = new Implementation { Name = "trailwright", Version = "0.1.0" };
+                    o.ServerInfo = new Implementation { Name = "trailwright", Version = "0.2.0" };
                     o.ServerInstructions = Instructions;
                 })
                 .WithHttpTransport(o => o.Stateless = true)

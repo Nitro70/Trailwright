@@ -59,7 +59,10 @@ BUILD_NEEDLES = [".pdb", B + "obj" + B, "/obj/", ":" + B + "Users" + B, "AppData
 # of common words (inside .NET's System.IO.Compression.Native) contains common first names.
 ALLOWED = [b"city of(this);andrew unique checked",
            # the app's own hint text naming an MCP client
-           b"claude code: ', el('code', {}, `claude mcp add --transport http trailwright"]
+           b"claude code: ', el('code', {}, `claude mcp add --transport http trailwright",
+           # the environment variable placeholder in the app's own comments and messages (a real
+           # user folder would still be caught by the personal needles)
+           b"%localappdata%\\trailwright\\"]
 
 
 def find(low, data, needle):

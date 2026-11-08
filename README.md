@@ -6,7 +6,7 @@ Trailwright is a separate Windows app, not a game mod. It reads and writes the s
 
 ![Trailwright](docs/screenshot.jpg)
 
-> **Status (v0.1.0, pre-release):** the file format is fully worked out and verified: 228 real blueprints, autosaves and transformation slots round-trip byte for byte, and files written by Trailwright decode with independent tools. Blocks placed by Trailwright get exactly the connections the game itself would make (375 of 375 re-placed blocks matched). **What has not happened yet is loading a Trailwright-edited blueprint in the game itself.** Keep the automatic backups until you have tried it.
+> **Status (v0.2.0):** the file format is fully worked out and verified: 228 real blueprints, autosaves and transformation slots round-trip byte for byte, and files written by Trailwright decode with independent tools. Blocks placed by Trailwright get exactly the connections the game itself would make (375 of 375 re-placed blocks matched), and the game has loaded a Trailwright-edited blueprint (its own autosave held the added block with Trailwright's connections). Removing blocks from builds with logic links has had the least in-game testing; saving over a file always keeps a backup.
 
 **Real block models.** Trailwright draws blocks with the game's own models and paint, and saves a blueprint picture rendered from them (so the game's blueprint menu shows your build, not boxes). The models are read from **your own Trailmakers install** once and kept on your PC (`%LOCALAPPDATA%\Trailwright\models`); none are included in this repository or the download. Run this once, and again after a game update (needs Python 3 with `UnityPy` and `numpy`):
 
