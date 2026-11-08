@@ -103,11 +103,15 @@ dialog::backdrop { background: #000a; }
 #library[open] { display: flex; flex-direction: column; }
 .dlg-head { display: flex; gap: 8px; align-items: center; padding: 12px; border-bottom: 1px solid var(--line); }
 .dlg-head input { flex: 1; }
-.libgrid { flex: 1; overflow: auto; padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; align-content: start; }
-.card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; cursor: pointer; }
+/* Fixed card height: with hundreds of blueprints, content-sized rows (lazy images have no size yet)
+   collapsed to nothing. */
+.libgrid { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); grid-auto-rows: 236px; gap: 10px; align-content: start; }
+.card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; cursor: pointer;
+  display: flex; flex-direction: column; height: 236px; }
 .card:hover { border-color: var(--accent); }
-.card img { width: 100%; aspect-ratio: 1; object-fit: contain; background: radial-gradient(#2a2f3a, #181a20); display: block; }
-.card .meta { padding: 6px 8px; }
+.card img { flex: none; width: 100%; height: 170px; object-fit: contain; background: radial-gradient(#2a2f3a, #181a20); display: block; }
+.card .meta { flex: 1; min-height: 0; padding: 6px 8px; }
 .card .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .sub { color: var(--muted); font-size: 11.5px; }
 #confirm { padding: 16px; max-width: 420px; }
