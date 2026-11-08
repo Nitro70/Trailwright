@@ -44,7 +44,8 @@ def personal_needles():
     top = drive + B + rest.strip(B + "/").replace("/", B).split(B)[0]
     email = git("config", "user.email")
     # A Steam library on some drive (E:\SteamLibrary); the bare folder name is in the game-finding code.
-    needles = [getpass.getuser(), os.path.expanduser("~"), REPO, main, os.path.basename(main), top,
+    # (the repo folder's own name is the product name here, so it is not a needle)
+    needles = [getpass.getuser(), os.path.expanduser("~"), REPO, main, top,
                ":" + B + "SteamLibrary", "7656119", "claude", "anthropic"]
     if email:
         needles += [email, email.split("@")[0]]
@@ -56,7 +57,9 @@ BUILD_NEEDLES = [".pdb", B + "obj" + B, "/obj/", ":" + B + "Users" + B, "AppData
 
 # Third-party text that contains a needle without being about anyone: Brotli's built-in dictionary
 # of common words (inside .NET's System.IO.Compression.Native) contains common first names.
-ALLOWED = [b"city of(this);andrew unique checked"]
+ALLOWED = [b"city of(this);andrew unique checked",
+           # the app's own hint text naming an MCP client
+           b"claude code: ', el('code', {}, `claude mcp add --transport http trailwright"]
 
 
 def find(low, data, needle):
