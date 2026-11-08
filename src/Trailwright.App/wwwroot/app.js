@@ -558,11 +558,20 @@ document.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click
 })[b.dataset.act]()));
 
 // ---------- settings: unrestricted + AI port ----------
+// While the confirm popup is open the 0.7 s state poll must not reset the box, and the answer must
+// use what was clicked, not whatever the box shows by then.
+let unrestrictedPending = false;
 $('unrestricted').addEventListener('change', async (e) => {
-  if (e.target.checked && !(await confirmBox('Unrestricted lets block settings go past the game\'s own limits. Note: the game clamps most settings back into range when it loads a blueprint, so values past the limit may have no effect in game. Turn it on?'))) {
-    e.target.checked = false; return;
+  const want = e.target.checked;
+  if (want) {
+    unrestrictedPending = true;
+    const ok = await confirmBox('Unrestricted lets block settings go past the game\'s own limits. Note: the game clamps most settings back into range when it loads a blueprint, so values past the limit may have no effect in game. Turn it on?');
+    if (!ok) { unrestrictedPending = false; e.target.checked = false; return; }
   }
-  await api('settings', { unrestricted: e.target.checked });
+  try {
+    await api('settings', { unrestricted: want });
+  } catch (err) { toast(err.message); }
+  unrestrictedPending = false;
   await refreshState(); renderProps();
 });
 $('aiEnabled').addEventListener('change', async (e) => { await api('settings', { aiEnabled: e.target.checked, aiPort: parseInt($('aiPort').value, 10) }); refreshState(); });
@@ -571,7 +580,7 @@ $('aiCanSave').addEventListener('change', async (e) => { await api('settings', {
 
 function renderState() {
   const s = S.state;
-  $('unrestricted').checked = s.unrestricted;
+  if (!unrestrictedPending) $('unrestricted').checked = s.unrestricted;
   $('aiEnabled').checked = s.ai.enabled;
   if (document.activeElement !== $('aiPort')) $('aiPort').value = s.ai.port;
   $('aiCanSave').checked = s.ai.canSave;
