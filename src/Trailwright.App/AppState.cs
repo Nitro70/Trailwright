@@ -42,7 +42,30 @@ public sealed class AppState
     public string? LastAiActivity { get; set; }
 
     /// <summary>Block models extracted from the user's own game install (tools/re/export_models.py). Never shipped.</summary>
-    public string ModelsDir { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Trailwright", "models");
+    public string ModelsDir { get; } = FindModelsDir();
+
+    /// <summary>
+    /// %LOCALAPPDATA%\Trailwright\models, or, when that is missing, a copy that Windows redirected into
+    /// a packaged app's private AppData (an MSIX app such as a desktop AI client runs the exporter there:
+    /// %LOCALAPPDATA%\Packages\&lt;app&gt;\LocalCache\Local\Trailwright\models).
+    /// </summary>
+    static string FindModelsDir()
+    {
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var real = Path.Combine(local, "Trailwright", "models");
+        if (File.Exists(Path.Combine(real, "index.json"))) return real;
+        try
+        {
+            var redirected = Directory.EnumerateDirectories(Path.Combine(local, "Packages"))
+                .Select(p => Path.Combine(p, "LocalCache", "Local", "Trailwright", "models"))
+                .Where(p => File.Exists(Path.Combine(p, "index.json")))
+                .OrderByDescending(p => File.GetLastWriteTimeUtc(Path.Combine(p, "index.json")))
+                .FirstOrDefault();
+            if (redirected != null) return redirected;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return real;
+    }
 
     /// <summary>The newest picture the 3D view rendered with the real models, and the build revision it shows.</summary>
     public (Trailwright.Format.RgbaImage Image, int Revision)? LivePicture { get; set; }

@@ -2,6 +2,16 @@ import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
 import { RoomEnvironment } from './vendor/RoomEnvironment.js';
 
+// errors are kept here so the self-test (and a support request) can read them
+window.__twErrors = [];
+window.addEventListener('error', (e) => window.__twErrors.push('error: ' + (e.message || e.type)));
+window.addEventListener('unhandledrejection', (e) => window.__twErrors.push('promise: ' + (e.reason?.message || e.reason)));
+// three.js reports shader and WebGL problems through console.error/warn: keep those too
+for (const level of ['error', 'warn']) {
+  const orig = console[level].bind(console);
+  console[level] = (...a) => { window.__twErrors.push(level + ': ' + a.map((x) => String(x?.message ?? x)).join(' ').slice(0, 600)); orig(...a); };
+}
+
 // ---------- small helpers ----------
 const $ = (id) => document.getElementById(id);
 const el = (tag, attrs = {}, ...kids) => {
@@ -201,7 +211,7 @@ function loadPart(guid, part) {
           g.computeBoundingSphere();
         }
       }
-    } catch { g = null; }
+    } catch (e) { g = null; window.__twErrors.push('model ' + key + ': ' + (e?.message || e)); }
     Models.geo.set(key, g);
     return g;
   })());
@@ -303,6 +313,32 @@ function rebuildBlocks() {
   const size = Math.max(32, Math.ceil((span * 2 + 16) / 8) * 8);
   if (!grid || grid.userData.y !== lowest - 0.5 || grid.children[1].geometry.parameters?.size !== size) makeGrid(size, lowest - 0.5);
   updateSelection();
+  lastBoxed = boxed.map((b) => b.type);
+  postDiagnostics();
+}
+
+// A short report of what the view drew, written to %LOCALAPPDATA%\Trailwright\diagnostics.json
+// (only on this PC) so problems on the user's side can be read instead of guessed.
+let lastBoxed = [], diagTimer = null;
+function postDiagnostics() {
+  clearTimeout(diagTimer);
+  diagTimer = setTimeout(async () => {
+    let gpu = null;
+    try {
+      const gl = renderer.getContext();
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    } catch { /* ignore */ }
+    const failed = [...Models.geo.entries()].filter(([, v]) => !v).map(([k]) => k);
+    await api('diagnostics', {
+      version: S.catalog?.version, build: S.scene.name, blocks: S.scene.blocks.length,
+      modelTypesInCache: Object.keys(Models.index || {}).length, modelGroupsDrawn: modelMeshes.length,
+      boxesDrawn: blocksMesh?.count ?? 0, boxedTypes: [...new Set(lastBoxed)].slice(0, 30),
+      partsLoaded: [...Models.geo.values()].filter(Boolean).length, partsFailed: failed.slice(0, 30),
+      partsStillLoading: Models.loading.size - Models.geo.size, errors: window.__twErrors.slice(-30),
+      gpu, userAgent: navigator.userAgent, at: new Date().toISOString(),
+    }).catch(() => {});
+  }, 2500);
 }
 
 function boxOf(b) {

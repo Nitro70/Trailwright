@@ -22,6 +22,8 @@ static class Program
         if (ArgInt(args, "--ai-port") is int ap) settings.AiPort = ap;
         if (ArgValue(args, "--folder") is { } folder) settings.TrailmakersFolder = folder;
         var state = new AppState(settings);
+        if (ArgValue(args, "--open") is { } openPath)
+            state.Editor.Replace(state.Library.Open(openPath), Path.GetFullPath(openPath));
         var ui = UiServer.Start(state, uiPort).GetAwaiter().GetResult();
         if (settings.AiEnabled) state.Mcp.SetEnabled(true).GetAwaiter().GetResult();
 
@@ -105,13 +107,13 @@ sealed class MainForm : Form
                         string result = "FAIL navigation " + e.WebErrorStatus;
                         if (e.IsSuccess)
                         {
-                            for (int i = 0; i < 40; i++)
+                            for (int i = 0; i < 60; i++)
                             {
                                 await Task.Delay(250);
                                 var js = await web.CoreWebView2.ExecuteScriptAsync(
-                                    "JSON.stringify({parts: document.querySelectorAll('.part').length, swatches: document.querySelectorAll('#swatches i').length, gl: !!document.getElementById('view').getContext('webgl2'), title: document.title, build: document.getElementById('build').textContent})");
-                                if (js.Contains("\\\"parts\\\":0")) continue;
-                                result = (js.Contains("\\\"gl\\\":true") ? "PASS " : "FAIL ") + js;
+                                    "JSON.stringify({parts: document.querySelectorAll('.part').length, swatches: document.querySelectorAll('#swatches i').length, gl: !!document.getElementById('view').getContext('webgl2'), title: document.title, build: document.getElementById('build').textContent, blocks: window.__tw ? window.__tw.S.scene.blocks.length : -1, modelGroups: window.__tw ? window.__tw.models.length : -1, boxes: window.__tw && window.__tw.boxes ? window.__tw.boxes.count : 0, errors: window.__twErrors})");
+                                if (js.Contains("\\\"parts\\\":0") || (i < 40 && js.Contains("\\\"modelGroups\\\":0") && !js.Contains("\\\"blocks\\\":0"))) continue;
+                                result = (js.Contains("\\\"gl\\\":true") && js.Contains("\\\"errors\\\":[]") ? "PASS " : "FAIL ") + js;
                                 break;
                             }
                         }

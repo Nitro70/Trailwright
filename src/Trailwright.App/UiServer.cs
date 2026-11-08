@@ -89,6 +89,16 @@ public static class UiServer
             var p = Path.Combine(s.ModelsDir, file);
             return File.Exists(p) ? Results.File(File.ReadAllBytes(p), "application/octet-stream") : Results.NotFound();
         });
+        app.MapPost("/api/diagnostics", async (HttpContext ctx) =>
+        {
+            using var reader = new StreamReader(ctx.Request.Body);
+            var body = await reader.ReadToEndAsync();
+            if (body.Length > 64_000) return Results.BadRequest();
+            var dir = Path.GetDirectoryName(s.ModelsDir)!;
+            Directory.CreateDirectory(dir);
+            await File.WriteAllTextAsync(Path.Combine(dir, "diagnostics.json"), body);
+            return Results.Ok();
+        });
         app.MapPost("/api/picture", (PictureReq r) =>
         {
             const string prefix = "data:image/png;base64,";
